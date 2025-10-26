@@ -3,25 +3,24 @@ import bcrypt
 from flask import request, jsonify, session
 
 def init_routes(app):
-    # Initialize the database
-    init_db()
-
     @app.route('/api/signup', methods=['POST'])
     def signup():
         data = request.get_json()
         email = data.get('email')
         password = data.get('password')
+        organization_id = data.get('organization_id') # Users must join an organization
 
-        if not email or not password:
-            return jsonify({'message': 'Email and password are required'}), 400
+        if not all([email, password, organization_id]):
+            return jsonify({'message': 'Email, password, and organization ID are required'}), 400
 
-        # Hash the password
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
         try:
             conn = sqlite3.connect('database.db')
             c = conn.cursor()
-            c.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, hashed_password))
+            # By default, new users are 'employees'. Admins can change this later.
+            c.execute('INSERT INTO users (email, password, organization_id, role) VALUES (?, ?, ?, ?)',
+                      (email, hashed_password, organization_id, 'employee'))
             conn.commit()
             conn.close()
             return jsonify({'message': 'Signup successful!'}), 201
@@ -39,16 +38,23 @@ def init_routes(app):
 
         conn = sqlite3.connect('database.db')
         c = conn.cursor()
-        c.execute('SELECT password, is_admin FROM users WHERE email = ?', (email,))
+        c.execute('SELECT id, password, role, organization_id FROM users WHERE email = ?', (email,))
         user = c.fetchone()
         conn.close()
 
-        if user and bcrypt.checkpw(password.encode('utf-8'), user[0]):
+        if user and bcrypt.checkpw(password.encode('utf-8'), user[1]):
+            session['user_id'] = user[0]
             session['email'] = email
-            session['is_admin'] = bool(user[1])
+            session['role'] = user[2]
+            session['organization_id'] = user[3]
+            # The 'is_admin' flag is now legacy, but we can set it for compatibility
+            # with older parts of the code until they are refactored.
+            session['is_admin'] = (user[2] == 'org_admin' or user[2] == 'super_admin')
+            
             return jsonify({
                 'message': 'Login successful!',
-                'is_admin': bool(user[1])
+                'role': user[2],
+                'organization_id': user[3]
             }), 200
         else:
             return jsonify({'message': 'Invalid email or password'}), 401
@@ -97,31 +103,3 @@ def init_routes(app):
         conn.close()
 
         return jsonify({'message': 'Employee added successfully!'}), 201
-
-
-def init_db():
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
-
-    # Create users table
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT DEFAULT 'user',
-        is_admin INTEGER NOT NULL DEFAULT 0
-    )''')
-
-    # Create employees table
-    c.execute('''CREATE TABLE IF NOT EXISTS employees (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        first_name TEXT NOT NULL,
-        last_name TEXT,
-        email TEXT UNIQUE,
-        position TEXT,
-        department TEXT,
-        phone TEXT
-    )''')
-
-    conn.commit()
-    conn.close()
