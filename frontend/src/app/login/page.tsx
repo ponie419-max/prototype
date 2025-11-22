@@ -1,85 +1,100 @@
-"use client";
+'use client';
 
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 
+const schema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
 export default function LoginPage() {
-  const router = useRouter();
   const { login } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const router = useRouter();
+  const [serverMessage, setServerMessage] = useState("");
   const [error, setError] = useState("");
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    resolver: zodResolver(schema),
+  });
 
+  const onSubmit = async (data: any) => {
+    setError("");
     try {
-      const response = await fetch("http://localhost:8000/api/login", {
+      const res = await fetch("http://localhost:8000/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(data),
       });
 
-      const data = await response.json();
+      const result = await res.json();
 
-      if (!response.ok) {
-        setError(data.error || "Login failed");
+      if (!res.ok) {
+        setError(result.message || "Login failed");
         return;
       }
 
-      // ✅ FIXED: Pass all 3 arguments
-      login(data.email, data.role, data.id);
+      login(result.email, result.role, result.id);
 
       // Redirect based on role
-      if (data.role === "super_admin") {
-        router.push("/super/dashboard");
-        return;
-      }
-
-      if (data.role === "org_admin") {
-        router.push("/org/dashboard");
-        return;
-      }
-
-      if (data.role === "team_manager") {
-        router.push("/manager/dashboard");
-        return;
-      }
-
-      // Default:
-      router.push("/assignments");
+      if (result.role === "super_admin") router.push("/super/dashboard");
+      else if (result.role === "org_admin") router.push("/org/dashboard");
+      else if (result.role === "team_manager") router.push("/manager/dashboard");
+      else router.push("/assignments");
     } catch (err) {
       console.error(err);
-      setError("Server error");
+      setError("Server error. Please try again later.");
     }
-  }
+  };
 
   return (
-    <div style={{ padding: "50px" }}>
-      <h1>Login</h1>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="bg-white p-10 rounded-lg shadow-md w-full max-w-md">
+        <h2 className="text-3xl font-bold mb-6 text-center">Login</h2>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+        {error && <p className="text-red-500 mb-4 text-center">{error}</p>}
+        {serverMessage && <p className="text-green-600 mb-4 text-center">{serverMessage}</p>}
 
-      <form onSubmit={handleLogin}>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        /><br /><br />
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <div>
+            <label className="block mb-1 font-medium">Email</label>
+            <input
+              type="email"
+              placeholder="Enter your email"
+              {...register("email")}
+              className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            {errors.email && <p className="text-red-500 mt-1">{errors.email.message}</p>}
+          </div>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        /><br /><br />
+          <div>
+            <label className="block mb-1 font-medium">Password</label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              {...register("password")}
+              className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            {errors.password && <p className="text-red-500 mt-1">{errors.password.message}</p>}
+          </div>
 
-        <button type="submit">Login</button>
-      </form>
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white py-3 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Login
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-gray-600">
+          Don't have an account? <a href="/signup" className="text-blue-600 hover:underline">Sign up</a>
+        </p>
+      </div>
     </div>
   );
 }
